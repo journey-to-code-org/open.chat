@@ -1,0 +1,47 @@
+<!--
+  A room's chat as a live document, and who else has it open. It draws nothing of its own: what
+  it holds goes in its slot, and its events say what changed. `<chat-room>` is drawn around one;
+  use it alone to draw a chat of your own.
+
+  `'use collection chats'` makes the `let`s below the fields of the document `chats/<doc>`, which
+  the server writes and `connect()` (`openChat()` from `@journey-to-code/chat/client`) brings to
+  the page as it changes, and keeps on the device for when there's no connection. `member` is
+  shared live with the room's other viewers as presence, never stored; `peers()` is theirs, each
+  with this element's presence fields by name (`other.here`).
+  @prop {string} doc - The room's key: `house:parts`.
+  @prop {string} member - Who is looking, by the id the app gave them.
+  @fires {{ messages: unknown[], rev: number, filter: boolean }} chatchange - The chat changed; `detail` is its messages, its rev and whether crude words are covered.
+  @fires {string[]} herechange - Who else has the room open changed; `detail` is their member ids, each once.
+  @slot - What the page draws of the chat.
+-->
+<script>
+  'use collection chats'
+  import { effect, emit } from '@zubra/runtime'
+  import { peers, presence } from '@zubra/sync'
+
+  // The document, as the server writes it. Never assigned here: only the server writes it.
+  let messages = []
+  let rev = 0
+  let filter = false
+
+  // Who this viewer is, for the others; and the others, one entry for each of their tabs.
+  let here = presence({ member: '' })
+  let others = peers()
+
+  effect(() => {
+    here = { member }
+  })
+  // Plain copies out, read whole so a change anywhere inside is a change.
+  effect(() => {
+    emit('chatchange', { messages: JSON.parse(JSON.stringify(messages)), rev, filter })
+  })
+  effect(() => {
+    emit('herechange', [...new Set(others.map((other) => other.here?.member ?? '').filter((id) => id && id !== member))])
+  })
+</script>
+<style>
+  :host { display: block; }
+</style>
+<chat-feed doc="" member="">
+  <zb-slot></zb-slot>
+</chat-feed>

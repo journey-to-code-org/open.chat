@@ -1,0 +1,16 @@
+{
+  "name": "open.chat",
+  "private": true,
+  "description": "A chat for any app: rooms kept live through Zubra Sync, polls, taking messages down, and a chat screen made of Zubra components that works in any framework.",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build -w @journey-to-code/chat -w @journey-to-code/chat-ui",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present"
+  },
+  "engines": {
+    "node": ">=22.12"
+  }
+}

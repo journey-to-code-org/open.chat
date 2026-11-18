@@ -1,0 +1,53 @@
+{
+  "name": "@journey-to-code/chat",
+  "version": "0.1.0",
+  "description": "A chat for any app: rooms kept live through Zubra Sync, changed only by the server, with polls, taking messages down, an optional word filter and notices for members who aren't looking.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./server": {
+      "types": "./dist/server.d.ts",
+      "default": "./dist/server.js"
+    },
+    "./client": {
+      "types": "./dist/client.d.ts",
+      "default": "./dist/client.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepublishOnly": "npm run build",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "@zubra/sync": "^5.22.0"
+  },
+  "devDependencies": {
+    "@zubra/sync": "^5.22.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/journey-to-code-org/open.chat.git",
+    "directory": "packages/chat"
+  },
+  "homepage": "https://github.com/journey-to-code-org/open.chat#readme",
+  "bugs": {
+    "url": "https://github.com/journey-to-code-org/open.chat/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

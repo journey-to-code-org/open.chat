@@ -1,0 +1,265 @@
+<!--
+  A room's chat, whole: who is in the room right now, what was said, polls to vote on, and a box
+  to say something. It follows the room live by itself (a `<chat-feed>` inside it); what the
+  person does goes to `actions`, which is what `openChat()` from `@journey-to-code/chat/client`
+  returns, or anything with the same methods.
+
+  Call `openChat()` before the element starts, so it waits for the first pull rather than showing
+  what the device kept from last time over it.
+
+  Who's here is a row of avatars, whoever has the room open first. A poll is choice cards to vote
+  with and a bar chart of how it stands. Asking a question and taking a message down are native
+  dialogs. Managers (who run the room) may take down anyone's message, and switch crude words
+  covered, where the server can (`can-filter`).
+  @prop {string} doc - The room's key, as the server knows it: `house:parts`.
+  @prop {string} me - The member looking, by the id the app gave them.
+  @prop {{ id: string, name: string }[]} members - Everyone in the room, in the room's order.
+  @prop {boolean} manager - Whether `me` runs the room.
+  @prop {boolean} online - Whether the page has a connection; without one, nothing can be sent.
+  @prop {boolean} canFilter - Whether the server can cover crude words (it was given a `mask`).
+  @prop {string} noun - What to call the room in the labels ("Say something to the house").
+  @prop {{ say(text: string): Promise<string | null>, unsay(id: number): Promise<string | null>, ask(question: string, options: string[]): Promise<string | null>, vote(id: number, option: number | null): Promise<string | null>, setFilter(on: boolean): Promise<string | null> } | null} actions - What sends the person's changes; each resolves to what went wrong, or null.
+  @fires {{ id: number, by: string, name: string, text: string }} heard - Someone else said something (once the room has loaded): for a sound, or a badge.
+-->
+<script>
+  import { emit, onUnmount } from '@zubra/runtime'
+  import './chat-feed.zb'
+  import './action-button.zb'
+  import './alert-banner.zb'
+  import './bar-chart.zb'
+  import './choice-cards.zb'
+  import './cluster-layout.zb'
+  import './empty-state.zb'
+  import './modal-dialog.zb'
+  import './stack-layout.zb'
+  import './status-badge.zb'
+  import './text-field.zb'
+  import './toggle-switch.zb'
+  import './user-avatar.zb'
+
+  const LIMIT = 280
+  const MAX_ANSWERS = 4
+
+  // ---- What the feed says ---------------------------------------------------------------------------
+  let messages = []
+  let filter = false
+  let others = []
+  // What has been heard already: nothing is "heard" until the room has loaded once, or two
+  // seconds have passed (a room nobody has spoken in has nothing to load).
+  let seen = 0
+  let settled = false
+  const settling = setTimeout(() => (settled = true), 2000)
+  onUnmount(() => clearTimeout(settling))
+
+  let log = null
+  function onChat(event) {
+    const next = event.detail
+    const newest = next.messages.at(-1)?.id ?? 0
+    const fresh = next.messages.filter((m) => m.id > seen && m.by !== me)
+    if (settled && fresh.length) for (const m of fresh) emit('heard', { id: m.id, by: m.by, name: m.name, text: m.text })
+    // Follow the talk down, unless the reader has scrolled back up through the older messages.
+    const first = seen === 0 && newest > 0
+    const near = log ? log.scrollHeight - log.scrollTop - log.clientHeight < 160 : true
+    const mineNew = next.messages.some((m) => m.id > seen && m.by === me)
+    if (next.rev > 0) settled = true
+    seen = Math.max(seen, newest)
+    messages = next.messages
+    filter = next.filter
+    if (first || ((fresh.length || mineNew) && (near || mineNew))) requestAnimationFrame(() => log && (log.scrollTop = log.scrollHeight))
+  }
+  function onHere(event) {
+    const next = event.detail
+    if (next.length !== others.length || next.some((id, i) => id !== others[i])) others = next
+  }
+
+  const here = new Set([me, ...others])
+  // Whoever is here first, then the rest, each group in the room's own order: a face moves along
+  // the row when its owner comes or goes.
+  const faces = [...members.filter((m) => here.has(m.id)), ...members.filter((m) => !here.has(m.id))].map((m) => ({ ...m, here: here.has(m.id) }))
+  const hereNames = faces.filter((m) => m.here && m.id !== me).map((m) => m.name)
+  const hereLine = members.length <= 1 ? 'Only you so far' : hereNames.length === 0 ? 'Just you here' : hereNames.length <= 2 ? `${hereNames.join(' and ')} ${hereNames.length === 1 ? 'is' : 'are'} here` : `${hereNames.length} others here`
+
+  // ---- Doing something --------------------------------------------------------------------------------
+  let busy = false
+  let problem = ''
+  async function attempt(work) {
+    if (busy) return false
+    if (!actions) {
+      problem = 'This chat has nowhere to send yet.'
+      return false
+    }
+    busy = true
+    problem = (await work()) ?? ''
+    busy = false
+    return problem === ''
+  }
+
+  let draft = ''
+  async function send() {
+    const text = draft.trim()
+    if (text && (await attempt(() => actions.say(text)))) draft = ''
+  }
+
+  // ---- Polls --------------------------------------------------------------------------------------------
+  const tally = (poll) => {
+    const counts = poll.options.map(() => 0)
+    for (const option of Object.values(poll.votes)) if (option >= 0 && option < counts.length) counts[option] += 1
+    return { counts, total: counts.reduce((a, b) => a + b, 0), mine: poll.votes[me] ?? null }
+  }
+  const choicesOf = (m) => m.poll.options.map((title, i) => ({ id: String(i), title }))
+  const barsOf = (m) => {
+    const { counts } = tally(m.poll)
+    return m.poll.options.map((label, i) => ({ label, value: counts[i] }))
+  }
+  const chosen = (m) => {
+    const { mine } = tally(m.poll)
+    return mine === null ? '' : String(mine)
+  }
+  const votesLine = (m) => {
+    const { total } = tally(m.poll)
+    return `${total} ${total === 1 ? 'vote' : 'votes'}`
+  }
+  function vote(m, option) {
+    attempt(() => actions.vote(m.id, option === '' ? null : Number(option)))
+  }
+
+  let asking = false
+  let question = ''
+  let answers = ['', '']
+  const filled = answers.map((a) => a.trim()).filter(Boolean)
+  function openAsk() {
+    question = ''
+    answers = ['', '']
+    asking = true
+  }
+  async function ask() {
+    if (await attempt(() => actions.ask(question.trim(), filled))) asking = false
+  }
+
+  // ---- Taking one down ----------------------------------------------------------------------------------
+  let taking = null
+  let takeOpen = false
+  function askTakeDown(m) {
+    taking = m
+    takeOpen = true
+  }
+  async function takeDown() {
+    if (taking) await attempt(() => actions.unsay(taking.id))
+    takeOpen = false
+  }
+  const takeLabel = taking && taking.by === me ? 'Take your message down?' : `Take down what ${taking ? taking.name : 'they'} said?`
+
+  // ---- When ---------------------------------------------------------------------------------------------
+  /** "3:42 PM" today, "Mon 3:42 PM" this week, "Nov 3" before that, in the page's own language. */
+  function when(at) {
+    const then = new Date(at)
+    const now = Date.now()
+    const time = then.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+    if (then.toDateString() === new Date(now).toDateString()) return time
+    if (now - at < 6 * 86400000) return `${then.toLocaleDateString([], { weekday: 'short' })} ${time}`
+    return then.toLocaleDateString([], { month: 'short', day: 'numeric' })
+  }
+  const iso = (at) => new Date(at).toISOString()
+  const faceTitle = (m) => `${m.name}${m.id === me ? ' (you)' : ''}: ${m.here ? 'here now' : 'not here'}`
+</script>
+<style>
+  :host { display: block; }
+  .room { display: flex; flex-direction: column; gap: 10px; }
+  .room > * { min-width: 0; }
+  .face { display: inline-flex; transition: opacity var(--duration-slow, 400ms); }
+  .face.away { opacity: 0.45; }
+  .count { margin-left: 4px; }
+  .log { max-height: var(--chat-height, min(46vh, 380px)); min-height: 96px; overflow-y: auto; overscroll-behavior: contain; border-radius: 8px; }
+  .log:focus-visible { outline: 2px solid var(--ring, #2563eb); outline-offset: 2px; }
+  .msg { display: flex; align-items: flex-end; gap: 6px; max-width: 88%; align-self: flex-start; }
+  .msg.mine { align-self: flex-end; }
+  .msg.poll { max-width: 100%; width: 100%; }
+  .bubble { display: flex; flex-direction: column; min-width: 0; padding: 6px 10px; border-radius: 12px; background: var(--chat-bubble, var(--muted, #f4f4f5)); color: var(--foreground, #18181b); }
+  .msg.mine .bubble { background: var(--chat-bubble-mine, var(--accent, #e4e4e7)); }
+  .msg.poll .bubble { flex: 1; gap: 8px; }
+  .who { font-size: 0.72rem; font-weight: 700; color: var(--chat-name, var(--primary, #18181b)); }
+  .who time { font-weight: 400; color: var(--muted-foreground, #71717a); margin-left: 6px; }
+  .text { overflow-wrap: anywhere; white-space: pre-wrap; }
+  .msg.poll .text { font-weight: 700; }
+  .vote, .bars { display: block; }
+  .small { align-self: flex-end; }
+  .compose { display: flex; align-items: flex-end; gap: 8px; }
+  .compose text-field { flex: 1; min-width: 0; }
+  .compose action-button { flex: none; }
+  .tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+  .asked { display: grid; gap: 0.75rem; }
+  .quote { margin: 0 0 0.5rem; font-style: italic; overflow-wrap: anywhere; }
+  /* Nothing to say is nothing sent: a field's "(optional)" would only be noise here. */
+  .compose .field-optional, .asked .field-optional { display: none; }
+  /* Coming and going: a message slides in, and the rest close up when one leaves. */
+  @starting-style { .msg { opacity: 0; translate: 0 8px; } }
+  .msg { transition: opacity var(--duration-normal, 200ms), translate var(--duration-normal, 200ms); }
+  .msg[data-leaving] { opacity: 0; scale: 0.96; }
+  @media (prefers-reduced-motion: reduce) { .msg, .face { transition: none; } }
+</style>
+<chat-room doc="" me="" members={[]} manager={false} online={true} can-filter={false} noun="room" actions={null}>
+  <chat-feed doc={doc} member={me} onchatchange={onChat} onherechange={onHere}>
+    <div class="room">
+      <cluster-layout class="here" gap="0.35rem" role="group" aria-label="Who's here">
+        <zb-each items={faces} as="m" key={m.id} animate>
+          <span class="face" class:away={!m.here} title={faceTitle(m)}>
+            <user-avatar name={m.name} size="sm" status={m.here ? 'online' : 'offline'}></user-avatar>
+          </span>
+        </zb-each>
+        <status-badge class="count" variant={hereNames.length ? 'success' : 'neutral'} dot={hereNames.length > 0}>{hereLine}</status-badge>
+      </cluster-layout>
+
+      <div class="log" ref={log} role="log" aria-label="Messages" tabindex="0">
+        <empty-state zb-if={messages.length === 0} heading={online ? 'Nothing said yet' : 'Nothing kept on this device'}>{!online ? "The chat will be here when you're back online." : members.length > 1 ? `Say hi to the ${noun}.` : 'Nobody else is here yet. Leave a note for when they are.'}</empty-state>
+        <stack-layout zb-else gap="0.45rem">
+          <zb-each items={messages} as="m" key={m.id} animate>
+            <article class="msg" class:mine={m.by === me} class:poll={!!m.poll}>
+              <user-avatar zb-if={m.by !== me} name={m.name} size="sm" status={here.has(m.by) ? 'online' : ''}></user-avatar>
+              <div class="bubble">
+                <span class="who">{m.name}{m.poll ? ' asks' : ''} <time datetime={iso(m.at)}>{when(m.at)}</time></span>
+                <span class="text">{m.text}</span>
+                <zb-if test={!!m.poll}>
+                  <choice-cards class="vote" label="Your answer to: {m.text}" items={choicesOf(m)} value={chosen(m)} onvaluechange={(event) => vote(m, event.detail)}></choice-cards>
+                  <bar-chart class="bars" items={barsOf(m)} label={votesLine(m)}></bar-chart>
+                  <action-button zb-if={chosen(m) !== ''} class="small" variant="link" size="sm" disabled={busy || !online} onclick={() => vote(m, '')}>Take back my vote</action-button>
+                </zb-if>
+                <action-button zb-if={m.by === me || manager} class="small" variant="link" size="sm" onclick={() => askTakeDown(m)}>Take down</action-button>
+              </div>
+            </article>
+          </zb-each>
+        </stack-layout>
+      </div>
+
+      <form class="compose" onsubmit.prevent={send}>
+        <text-field value:bind={draft} label="Say something to the {noun}" name="message" autocomplete="off" maxlength={LIMIT} disabled={!online}></text-field>
+        <action-button type="submit" loading={busy} disabled={!draft.trim() || !online}>Send</action-button>
+      </form>
+      <div class="tools">
+        <action-button variant="outline" size="sm" disabled={!online} onclick={openAsk}>Ask the {noun}…</action-button>
+        <toggle-switch zb-if={manager && canFilter} class="filter" label="Cover crude words" checked={filter} disabled={!online || busy} oncheckedchange={(event) => attempt(() => actions.setFilter(event.detail))}></toggle-switch>
+        <status-badge zb-else-if={filter} variant="outline">Crude words are covered</status-badge>
+      </div>
+
+      <alert-banner zb-if={problem} variant="danger" heading="That didn't go through">{problem}</alert-banner>
+    </div>
+  </chat-feed>
+
+  <modal-dialog open:bind={asking} label="Ask the {noun}">
+    <form class="asked" onsubmit.prevent={ask}>
+      <text-field value:bind={question} label="Your question" name="question" autocomplete="off" maxlength={140} required></text-field>
+      <zb-each items={answers} as="answer" index="i" key={i}>
+        <text-field value={answer} onvaluechange={(event) => (answers[i] = event.detail)} label="Answer {i + 1}" name="answer-{i}" autocomplete="off" maxlength={40} required={i < 2}></text-field>
+      </zb-each>
+      <action-button zb-if={answers.length < MAX_ANSWERS} variant="link" size="sm" onclick={() => answers.push('')}>Add an answer</action-button>
+    </form>
+    <action-button slot="actions" variant="outline" data-close>Never mind</action-button>
+    <action-button slot="actions" loading={busy} disabled={!question.trim() || filled.length < 2} onclick={ask}>Ask</action-button>
+  </modal-dialog>
+
+  <modal-dialog open:bind={takeOpen} label={takeLabel}>
+    <p class="quote">“{taking ? taking.text : ''}”</p>
+    <p>It goes for everyone in the {noun}, and can't be put back.</p>
+    <action-button slot="actions" variant="outline" data-close>Leave it</action-button>
+    <action-button slot="actions" variant="destructive" loading={busy} onclick={takeDown}>Take it down</action-button>
+  </modal-dialog>
+</chat-room>

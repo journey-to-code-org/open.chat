@@ -1,0 +1,95 @@
+{
+  "name": "@journey-to-code/chat-ui",
+  "version": "0.1.0",
+  "description": "The chat's screen as Zubra components: <chat-room> (who's here, messages, polls, a box to say something) and <chat-feed> (the live room alone), for any framework or none.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "customElements": "./dist/custom-elements.json",
+  "sideEffects": [
+    "./dist/**/*.js"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./react": {
+      "types": "./dist/react/index.d.ts",
+      "default": "./dist/react/index.js"
+    },
+    "./vue": {
+      "types": "./dist/vue/index.d.ts",
+      "default": "./dist/vue/index.js"
+    },
+    "./custom-elements.json": "./dist/custom-elements.json",
+    "./theme.css": "./themes/default.css",
+    "./components/*.zb": "./src/components/*.zb",
+    "./package.json": "./package.json",
+    "./react/*": {
+      "types": "./dist/react/*.d.ts",
+      "default": "./dist/react/*.js"
+    },
+    "./vue/*": {
+      "types": "./dist/vue/*.d.ts",
+      "default": "./dist/vue/*.js"
+    },
+    "./*": {
+      "types": "./dist/*.d.ts",
+      "default": "./dist/*.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src/components",
+    "themes",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "zubra build --lib src/components --out dist --name @journey-to-code/chat-ui",
+    "prepublishOnly": "npm run build",
+    "check": "zubra check src/components/*.zb",
+    "typecheck": "npm run check",
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "@zubra/runtime": "^5.22.0",
+    "@zubra/sync": "^5.22.0",
+    "react": ">=18",
+    "vue": ">=3.3"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    },
+    "vue": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@journey-to-code/chat": "*",
+    "@vitest/browser-playwright": "^5.1.1",
+    "@zubra/compiler": "^5.22.0",
+    "@zubra/runtime": "^5.22.0",
+    "@zubra/sync": "^5.22.0",
+    "@zubra/unplugin": "^5.22.0",
+    "playwright": "^1.65.1",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "vitest": "^5.1.1",
+    "vue": "^3.5.45"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/journey-to-code-org/open.chat.git",
+    "directory": "packages/chat-ui"
+  },
+  "homepage": "https://github.com/journey-to-code-org/open.chat#readme",
+  "bugs": {
+    "url": "https://github.com/journey-to-code-org/open.chat/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

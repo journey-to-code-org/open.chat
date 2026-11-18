@@ -1,0 +1,9 @@
+node_modules/
+dist/
+coverage/
+*.log
+.DS_Store
+.zubra/
+.vitest/
+# Written beside each component by the Zubra plugin.
+*.d.zb.ts
