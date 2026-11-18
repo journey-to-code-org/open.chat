@@ -41,7 +41,7 @@
   },
   "files": [
     "dist",
-    "src/components",
+    "src/components/*.zb",
     "themes",
     "README.md"
   ],

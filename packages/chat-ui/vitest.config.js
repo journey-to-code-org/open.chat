@@ -6,7 +6,8 @@ import { playwright } from '@vitest/browser-playwright';
 import zubra from '@zubra/unplugin/vite';
 
 export default defineConfig({
-  plugins: [zubra()],
+  // Typings in .zubra/types, not beside each component, where they'd be published with the sources.
+  plugins: [zubra({ dts: { dir: '.zubra/types' } })],
   // Found up front, so Vite doesn't reload the page halfway through with a second copy of the
   // runtime (the test helper imports React and Vue only once it's asked for them).
   optimizeDeps: { include: ['react', 'react-dom', 'react-dom/client', 'vue', '@zubra/runtime', '@zubra/runtime/testing', '@zubra/runtime/motion', '@zubra/runtime/react', '@zubra/runtime/vue', '@zubra/sync'] },
