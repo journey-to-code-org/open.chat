@@ -52,7 +52,7 @@ async function room(framework, props = {}) {
       present = ids;
       await flush();
     },
-    texts: () => [...el.querySelectorAll('.msg .text')].map((t) => t.textContent),
+    texts: () => [...el.querySelectorAll('.chat-msg .chat-text')].map((t) => t.textContent),
     button: (name, within = el) => [...within.querySelectorAll('button')].find((b) => b.textContent.trim() === name),
     async type(field, text) {
       const input = field.querySelector('input');
@@ -70,14 +70,14 @@ test('React and Vue are installed, so all three run', () => {
 describe.each(found)('%s', (framework) => {
   test("shows everyone in the room, whoever is here first, and says who", async () => {
     const r = await room(framework);
-    const faces = () => [...r.el.querySelectorAll('.face')].map((f) => f.title);
+    const faces = () => [...r.el.querySelectorAll('.chat-face')].map((f) => f.title);
     expect(faces()).toEqual(['McMikey (you): here now', 'Dubs: not here', 'Grammi: not here']);
-    expect(r.el.querySelector('.count').textContent).toContain('Just you here');
+    expect(r.el.querySelector('.chat-count').textContent).toContain('Just you here');
     await r.here(['m3']);
     expect(faces()).toEqual(['McMikey (you): here now', 'Grammi: here now', 'Dubs: not here']);
-    expect(r.el.querySelector('.count').textContent).toContain('Grammi is here');
+    expect(r.el.querySelector('.chat-count').textContent).toContain('Grammi is here');
     await r.here(['m3', 'm2']);
-    expect(r.el.querySelector('.count').textContent).toContain('Dubs and Grammi are here');
+    expect(r.el.querySelector('.chat-count').textContent).toContain('Dubs and Grammi are here');
     r.view.unmount();
   });
 
@@ -86,8 +86,9 @@ describe.each(found)('%s', (framework) => {
     expect(r.el.querySelector('empty-state').textContent).toContain('Say hi to the house.');
     await r.chat([said(1, 'm2', 'Spades at eight?'), said(2, 'm1', "I'm in")]);
     expect(r.texts()).toEqual(['Spades at eight?', "I'm in"]);
-    const [theirs, mine] = r.el.querySelectorAll('.msg');
-    expect(mine.classList.contains('mine')).toBe(true);
+    const [theirs, mine] = r.el.querySelectorAll('.chat-msg');
+    expect(mine.hasAttribute('data-mine')).toBe(true);
+    expect(theirs.hasAttribute('data-mine')).toBe(false);
     expect(r.button('Take down', theirs)).toBeUndefined();
     expect(r.button('Take down', mine)).toBeDefined();
     r.view.unmount();
@@ -97,7 +98,7 @@ describe.each(found)('%s', (framework) => {
     const r = await room(framework, { manager: true });
     await r.chat([said(1, 'm2', 'Something rude'), said(2, 'm3', 'Hello')]);
     const dialog = () => [...r.el.querySelectorAll('dialog')].find((d) => d.open);
-    r.button('Take down', r.el.querySelectorAll('.msg')[0]).click();
+    r.button('Take down', r.el.querySelectorAll('.chat-msg')[0]).click();
     await r.flush();
     expect(dialog().textContent).toContain('Take down what Dubs said?');
     expect(dialog().textContent).toContain('“Something rude”');
@@ -110,12 +111,12 @@ describe.each(found)('%s', (framework) => {
 
   test('sends what was typed, and empties the box once it went', async () => {
     const r = await room(framework);
-    const field = r.el.querySelector('.compose text-field');
+    const field = r.el.querySelector('.chat-compose text-field');
     const send = r.button('Send');
     expect(send.disabled).toBe(true);
     await r.type(field, '  Palace after?  ');
     expect(send.disabled).toBe(false);
-    r.el.querySelector('form.compose').requestSubmit();
+    r.el.querySelector('form.chat-compose').requestSubmit();
     await r.flush();
     expect(r.calls).toEqual([['say', 'Palace after?']]);
     expect(field.querySelector('input').value).toBe('');
@@ -124,9 +125,9 @@ describe.each(found)('%s', (framework) => {
 
   test('keeps what was typed, and says what went wrong, when it didn’t go', async () => {
     const r = await room(framework, { actions: actions(() => 'Give the others a moment to answer.') });
-    const field = r.el.querySelector('.compose text-field');
+    const field = r.el.querySelector('.chat-compose text-field');
     await r.type(field, 'One more');
-    r.el.querySelector('form.compose').requestSubmit();
+    r.el.querySelector('form.chat-compose').requestSubmit();
     await r.flush();
     expect(r.el.querySelector('alert-banner').textContent).toContain('Give the others a moment to answer.');
     expect(field.querySelector('input').value).toBe('One more');
@@ -137,7 +138,7 @@ describe.each(found)('%s', (framework) => {
     const r = await room(framework);
     const poll = said(4, 'm2', 'Spades or Palace?', { poll: { options: ['Spades', 'Palace'], votes: { m2: 1, m3: 1 } } });
     await r.chat([poll]);
-    const card = r.el.querySelector('.msg.poll');
+    const card = r.el.querySelector('.chat-msg[data-poll]');
     const radios = [...card.querySelectorAll('[role=radio]')];
     expect(radios.map((b) => b.textContent.trim())).toEqual(['Spades', 'Palace']);
     expect(radios.map((b) => b.getAttribute('aria-checked'))).toEqual(['false', 'false']);
@@ -149,7 +150,7 @@ describe.each(found)('%s', (framework) => {
     expect(r.calls).toEqual([['vote', 4, 0]]);
     // The server says it counted.
     await r.chat([{ ...poll, poll: { ...poll.poll, votes: { ...poll.poll.votes, m1: 0 } } }]);
-    const now = r.el.querySelector('.msg.poll');
+    const now = r.el.querySelector('.chat-msg[data-poll]');
     expect([...now.querySelectorAll('[role=radio]')].map((b) => b.getAttribute('aria-checked'))).toEqual(['true', 'false']);
     expect(now.textContent).toContain('3 votes');
     r.button('Take back my vote', now).click();
@@ -215,9 +216,26 @@ describe.each(found)('%s', (framework) => {
     r.view.unmount();
   });
 
+  test("isn't moved by the page's own CSS for common class names", async () => {
+    // A page with rules of its own for the names a chat would reach for first (a light-DOM
+    // component's elements are the page's too).
+    const hostile = document.createElement('style');
+    hostile.textContent = '.bubble, .msg, .text, .who, .face, .count, .log, .room { position: absolute; display: none; } .mine, .poll, .away, .small, .bars, .vote { display: none; }';
+    document.head.append(hostile);
+    const r = await room(framework);
+    await r.chat([said(1, 'm2', 'Still here?', { poll: { options: ['Yes', 'No'], votes: {} } }), said(2, 'm1', 'Yes')]);
+    for (const el of r.el.querySelectorAll('.chat-msg, .chat-bubble, .chat-text, .chat-face, .chat-vote, .chat-bars')) {
+      const box = el.getBoundingClientRect();
+      expect(box.width * box.height, el.className).toBeGreaterThan(0);
+      expect(getComputedStyle(el).position, el.className).not.toBe('absolute');
+    }
+    hostile.remove();
+    r.view.unmount();
+  });
+
   test('offline: nothing can be sent', async () => {
     const r = await room(framework, { online: false });
-    expect(r.el.querySelector('.compose input').disabled).toBe(true);
+    expect(r.el.querySelector('.chat-compose input').disabled).toBe(true);
     expect(r.button('Send').disabled).toBe(true);
     expect(r.button('Ask the house…').disabled).toBe(true);
     expect(r.el.querySelector('empty-state').textContent).toContain('Nothing kept on this device');

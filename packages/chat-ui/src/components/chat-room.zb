@@ -164,79 +164,79 @@
 </script>
 <style>
   :host { display: block; }
-  .room { display: flex; flex-direction: column; gap: 10px; }
-  .room > * { min-width: 0; }
-  .face { display: inline-flex; transition: opacity var(--duration-slow, 400ms); }
-  .face.away { opacity: 0.45; }
-  .count { margin-left: 4px; }
-  .log { max-height: var(--chat-height, min(46vh, 380px)); min-height: 96px; overflow-y: auto; overscroll-behavior: contain; border-radius: 8px; }
-  .log:focus-visible { outline: 2px solid var(--ring, #2563eb); outline-offset: 2px; }
-  .msg { display: flex; align-items: flex-end; gap: 6px; max-width: 88%; align-self: flex-start; }
-  .msg.mine { align-self: flex-end; }
-  .msg.poll { max-width: 100%; width: 100%; }
-  .bubble { display: flex; flex-direction: column; min-width: 0; padding: 6px 10px; border-radius: 12px; background: var(--chat-bubble, var(--muted, #f4f4f5)); color: var(--foreground, #18181b); }
-  .msg.mine .bubble { background: var(--chat-bubble-mine, var(--accent, #e4e4e7)); }
-  .msg.poll .bubble { flex: 1; gap: 8px; }
-  .who { font-size: 0.72rem; font-weight: 700; color: var(--chat-name, var(--primary, #18181b)); }
-  .who time { font-weight: 400; color: var(--muted-foreground, #71717a); margin-left: 6px; }
-  .text { overflow-wrap: anywhere; white-space: pre-wrap; }
-  .msg.poll .text { font-weight: 700; }
-  .vote, .bars { display: block; }
-  .small { align-self: flex-end; }
-  .compose { display: flex; align-items: flex-end; gap: 8px; }
-  .compose text-field { flex: 1; min-width: 0; }
-  .compose action-button { flex: none; }
-  .tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
-  .asked { display: grid; gap: 0.75rem; }
-  .quote { margin: 0 0 0.5rem; font-style: italic; overflow-wrap: anywhere; }
+  .chat-body { display: flex; flex-direction: column; gap: 10px; }
+  .chat-body > * { min-width: 0; }
+  .chat-face { display: inline-flex; transition: opacity var(--duration-slow, 400ms); }
+  .chat-face[data-away] { opacity: 0.45; }
+  .chat-count { margin-left: 4px; }
+  .chat-log { max-height: var(--chat-height, min(46vh, 380px)); min-height: 96px; overflow-y: auto; overscroll-behavior: contain; border-radius: 8px; }
+  .chat-log:focus-visible { outline: 2px solid var(--ring, #2563eb); outline-offset: 2px; }
+  .chat-msg { display: flex; align-items: flex-end; gap: 6px; max-width: 88%; align-self: flex-start; }
+  .chat-msg[data-mine] { align-self: flex-end; }
+  .chat-msg[data-poll] { max-width: 100%; width: 100%; }
+  .chat-bubble { display: flex; flex-direction: column; min-width: 0; padding: 6px 10px; border-radius: 12px; background: var(--chat-bubble, var(--muted, #f4f4f5)); color: var(--foreground, #18181b); }
+  .chat-msg[data-mine] .chat-bubble { background: var(--chat-bubble-mine, var(--accent, #e4e4e7)); }
+  .chat-msg[data-poll] .chat-bubble { flex: 1; gap: 8px; }
+  .chat-who { font-size: 0.72rem; font-weight: 700; color: var(--chat-name, var(--primary, #18181b)); }
+  .chat-who time { font-weight: 400; color: var(--muted-foreground, #71717a); margin-left: 6px; }
+  .chat-text { overflow-wrap: anywhere; white-space: pre-wrap; }
+  .chat-msg[data-poll] .chat-text { font-weight: 700; }
+  .chat-vote, .chat-bars { display: block; }
+  .chat-small { align-self: flex-end; }
+  .chat-compose { display: flex; align-items: flex-end; gap: 8px; }
+  .chat-compose text-field { flex: 1; min-width: 0; }
+  .chat-compose action-button { flex: none; }
+  .chat-tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+  .chat-ask { display: grid; gap: 0.75rem; }
+  .chat-quote { margin: 0 0 0.5rem; font-style: italic; overflow-wrap: anywhere; }
   /* Nothing to say is nothing sent: a field's "(optional)" would only be noise here. */
-  .compose .field-optional, .asked .field-optional { display: none; }
+  .chat-compose .field-optional, .chat-ask .field-optional { display: none; }
   /* Coming and going: a message slides in, and the rest close up when one leaves. */
-  @starting-style { .msg { opacity: 0; translate: 0 8px; } }
-  .msg { transition: opacity var(--duration-normal, 200ms), translate var(--duration-normal, 200ms); }
-  .msg[data-leaving] { opacity: 0; scale: 0.96; }
-  @media (prefers-reduced-motion: reduce) { .msg, .face { transition: none; } }
+  @starting-style { .chat-msg { opacity: 0; translate: 0 8px; } }
+  .chat-msg { transition: opacity var(--duration-normal, 200ms), translate var(--duration-normal, 200ms); }
+  .chat-msg[data-leaving] { opacity: 0; scale: 0.96; }
+  @media (prefers-reduced-motion: reduce) { .chat-msg, .chat-face { transition: none; } }
 </style>
 <chat-room doc="" me="" members={[]} manager={false} online={true} can-filter={false} noun="room" actions={null}>
   <chat-feed doc={doc} member={me} onchatchange={onChat} onherechange={onHere}>
-    <div class="room">
-      <cluster-layout class="here" gap="0.35rem" role="group" aria-label="Who's here">
+    <div class="chat-body">
+      <cluster-layout class="chat-here" gap="0.35rem" role="group" aria-label="Who's here">
         <zb-each items={faces} as="m" key={m.id} animate>
-          <span class="face" class:away={!m.here} title={faceTitle(m)}>
+          <span class="chat-face" data-away={m.here ? null : ""} title={faceTitle(m)}>
             <user-avatar name={m.name} size="sm" status={m.here ? 'online' : 'offline'}></user-avatar>
           </span>
         </zb-each>
-        <status-badge class="count" variant={hereNames.length ? 'success' : 'neutral'} dot={hereNames.length > 0}>{hereLine}</status-badge>
+        <status-badge class="chat-count" variant={hereNames.length ? 'success' : 'neutral'} dot={hereNames.length > 0}>{hereLine}</status-badge>
       </cluster-layout>
 
-      <div class="log" ref={log} role="log" aria-label="Messages" tabindex="0">
+      <div class="chat-log" ref={log} role="log" aria-label="Messages" tabindex="0">
         <empty-state zb-if={messages.length === 0} heading={online ? 'Nothing said yet' : 'Nothing kept on this device'}>{!online ? "The chat will be here when you're back online." : members.length > 1 ? `Say hi to the ${noun}.` : 'Nobody else is here yet. Leave a note for when they are.'}</empty-state>
         <stack-layout zb-else gap="0.45rem">
           <zb-each items={messages} as="m" key={m.id} animate>
-            <article class="msg" class:mine={m.by === me} class:poll={!!m.poll}>
+            <article class="chat-msg" data-mine={m.by === me ? "" : null} data-poll={m.poll ? "" : null}>
               <user-avatar zb-if={m.by !== me} name={m.name} size="sm" status={here.has(m.by) ? 'online' : ''}></user-avatar>
-              <div class="bubble">
-                <span class="who">{m.name}{m.poll ? ' asks' : ''} <time datetime={iso(m.at)}>{when(m.at)}</time></span>
-                <span class="text">{m.text}</span>
+              <div class="chat-bubble">
+                <span class="chat-who">{m.name}{m.poll ? ' asks' : ''} <time datetime={iso(m.at)}>{when(m.at)}</time></span>
+                <span class="chat-text">{m.text}</span>
                 <zb-if test={!!m.poll}>
-                  <choice-cards class="vote" label="Your answer to: {m.text}" items={choicesOf(m)} value={chosen(m)} onvaluechange={(event) => vote(m, event.detail)}></choice-cards>
-                  <bar-chart class="bars" items={barsOf(m)} label={votesLine(m)}></bar-chart>
-                  <action-button zb-if={chosen(m) !== ''} class="small" variant="link" size="sm" disabled={busy || !online} onclick={() => vote(m, '')}>Take back my vote</action-button>
+                  <choice-cards class="chat-vote" label="Your answer to: {m.text}" items={choicesOf(m)} value={chosen(m)} onvaluechange={(event) => vote(m, event.detail)}></choice-cards>
+                  <bar-chart class="chat-bars" items={barsOf(m)} label={votesLine(m)}></bar-chart>
+                  <action-button zb-if={chosen(m) !== ''} class="chat-small" variant="link" size="sm" disabled={busy || !online} onclick={() => vote(m, '')}>Take back my vote</action-button>
                 </zb-if>
-                <action-button zb-if={m.by === me || manager} class="small" variant="link" size="sm" onclick={() => askTakeDown(m)}>Take down</action-button>
+                <action-button zb-if={m.by === me || manager} class="chat-small" variant="link" size="sm" onclick={() => askTakeDown(m)}>Take down</action-button>
               </div>
             </article>
           </zb-each>
         </stack-layout>
       </div>
 
-      <form class="compose" onsubmit.prevent={send}>
+      <form class="chat-compose" onsubmit.prevent={send}>
         <text-field value:bind={draft} label="Say something to the {noun}" name="message" autocomplete="off" maxlength={LIMIT} disabled={!online}></text-field>
         <action-button type="submit" loading={busy} disabled={!draft.trim() || !online}>Send</action-button>
       </form>
-      <div class="tools">
+      <div class="chat-tools">
         <action-button variant="outline" size="sm" disabled={!online} onclick={openAsk}>Ask the {noun}…</action-button>
-        <toggle-switch zb-if={manager && canFilter} class="filter" label="Cover crude words" checked={filter} disabled={!online || busy} oncheckedchange={(event) => attempt(() => actions.setFilter(event.detail))}></toggle-switch>
+        <toggle-switch zb-if={manager && canFilter} class="chat-filter" label="Cover crude words" checked={filter} disabled={!online || busy} oncheckedchange={(event) => attempt(() => actions.setFilter(event.detail))}></toggle-switch>
         <status-badge zb-else-if={filter} variant="outline">Crude words are covered</status-badge>
       </div>
 
@@ -245,7 +245,7 @@
   </chat-feed>
 
   <modal-dialog open:bind={asking} label="Ask the {noun}">
-    <form class="asked" onsubmit.prevent={ask}>
+    <form class="chat-ask" onsubmit.prevent={ask}>
       <text-field value:bind={question} label="Your question" name="question" autocomplete="off" maxlength={140} required></text-field>
       <zb-each items={answers} as="answer" index="i" key={i}>
         <text-field value={answer} onvaluechange={(event) => (answers[i] = event.detail)} label="Answer {i + 1}" name="answer-{i}" autocomplete="off" maxlength={40} required={i < 2}></text-field>
@@ -257,7 +257,7 @@
   </modal-dialog>
 
   <modal-dialog open:bind={takeOpen} label={takeLabel}>
-    <p class="quote">“{taking ? taking.text : ''}”</p>
+    <p class="chat-quote">“{taking ? taking.text : ''}”</p>
     <p>It goes for everyone in the {noun}, and can't be put back.</p>
     <action-button slot="actions" variant="outline" data-close>Leave it</action-button>
     <action-button slot="actions" variant="destructive" loading={busy} onclick={takeDown}>Take it down</action-button>
