@@ -18,6 +18,7 @@ It started as the house chat in [open.parlor](https://github.com/journey-to-code
 - **Word filter**, for apps that pass a `mask`: managers switch it on, and it covers what's said from then on.
 - **Notices**: the app is told who to notify, at most once every five minutes per member, and never someone whose page is open on the room.
 - Five messages in ten seconds at most, per member.
+- **Unread**: `chat.unread(key, member)` counts what others said since that member last had the room open. Reading the room, saying something, or a presence heartbeat counts as having seen it. The markers are kept per room in a server-only collection, `chats-seen`, which pages are never sent.
 
 ## Using it
 
