@@ -1,6 +1,6 @@
 {
   "name": "@journey-to-code/chat-ui",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "description": "The chat's screen as Zubra components: <chat-room> (who's here, messages, polls, a box to say something) and <chat-feed> (the live room alone), for any framework or none.",
   "type": "module",
   "main": "./dist/index.js",

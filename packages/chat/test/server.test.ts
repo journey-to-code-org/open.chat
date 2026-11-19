@@ -126,6 +126,30 @@ describe("a room's chat", () => {
     expect(texts((await as(mikey)()).body).at(-1)).toBe("darn");
   });
 
+  it("keeps everything said at once, each under its own id", async () => {
+    // The app takes its time over each message (it asks its database, say), and posts its own words meanwhile.
+    const { chat, as } = setup({ beforeSay: async ({ text }) => (await new Promise((done) => setTimeout(done, 5)), text) });
+    await Promise.all([
+      as(mikey)({ text: "one" }),
+      as(dubs)({ text: "two" }),
+      chat.post(room.key, { id: "bot", name: "Dot" }, "three", { bot: true }),
+      as(grammi)({ text: "four" }),
+      chat.post(room.key, null, "five", { notice: true }),
+    ]);
+    const { messages, next, rev } = await chat.read(room.key);
+    expect(messages.map((m) => m.text).sort()).toEqual(["five", "four", "one", "three", "two"]);
+    expect(new Set(messages.map((m) => m.id)).size).toBe(5);
+    expect([next, rev]).toEqual([6, 5]);
+    // Taking down and votes wait their turn too.
+    const asked = (await as(mikey)({ poll: { question: "Spades?", options: ["Yes", "No"] } })).body as { messages: { id: number; poll?: unknown }[] };
+    const poll = asked.messages.find((m) => m.poll)!.id;
+    await Promise.all([as(dubs)({ vote: { id: poll, option: 0 } }), as(grammi)({ vote: { id: poll, option: 1 } }), chat.redact(room.key, messages[0]!.id), as(mikey)({ text: "six" })]);
+    const after = await chat.read(room.key);
+    expect(after.messages.find((m) => m.id === poll)!.poll!.votes).toEqual({ m2: 0, m3: 1 });
+    expect(after.messages.map((m) => m.text)).toContain("six");
+    expect(after.messages.some((m) => m.id === messages[0]!.id)).toBe(false);
+  });
+
   it("starts over when cleared, without giving an id out again", async () => {
     const { chat, as } = setup();
     await as(mikey)({ text: "The old room" });
@@ -141,6 +165,68 @@ describe("a room's chat", () => {
     expect(await chat.redact(room.key, rude!.id)).toMatchObject({ name: "Dubs", text: "Something rude" });
     expect(await chat.redact(room.key, rude!.id)).toBeNull();
     expect(texts((await as(dubs)()).body)).toEqual([]);
+  });
+});
+
+describe("the app's own words, and its say over people's", () => {
+  it("posts a computer player's words and the room's notices past every check, and notifies nobody", async () => {
+    const { chat, as, notices } = setup();
+    const said = await chat.post(room.key, { id: "seat:2", name: "Robo" }, "  Nice\n play  ", { bot: true });
+    expect(said).toMatchObject({ by: "seat:2", name: "Robo", text: "Nice play", bot: true });
+    expect(await chat.post(room.key, null, "Grammi joined", { notice: true })).toMatchObject({ by: "", name: "", text: "Grammi joined", notice: true });
+    expect(await chat.post(room.key, { id: "x", name: "X" }, "   ")).toBe("Nothing to say.");
+    // As fast as the app likes: no five-in-ten-seconds for it.
+    for (let i = 0; i < 8; i++) expect(typeof (await chat.post(room.key, { id: "seat:2", name: "Robo" }, `line ${i}`, { bot: true }))).not.toBe("string");
+    expect(notices).toEqual([]);
+    // Members see them; a notice is nobody's unread, a bot's line is.
+    const seen = (await as(dubs)()).body as { messages: { bot?: boolean; notice?: boolean }[] };
+    expect(seen.messages.filter((m) => m.notice)).toHaveLength(1);
+    await chat.post(room.key, null, "Dubs left", { notice: true });
+    await chat.post(room.key, { id: "seat:2", name: "Robo" }, "Bye", { bot: true });
+    expect(await chat.unread(room.key, "m2")).toBe(1);
+  });
+
+  it("lets the app change people's words or turn them away, for messages and every piece of a poll", async () => {
+    const asked: string[] = [];
+    const { as } = setup({
+      beforeSay: ({ me, text }) => {
+        asked.push(`${me.id}:${text}`);
+        if (me.id === "m3") return { error: "You've been muted at this table." };
+        return text.replace(/heck/g, "h**k");
+      },
+    });
+    expect(((await as(dubs)({ text: "what the heck" })).body as { messages: { text: string }[] }).messages.at(-1)!.text).toBe("what the h**k");
+    const muted = await as(grammi)({ text: "Hello?" });
+    expect(muted).toMatchObject({ status: 403, body: { error: "You've been muted at this table." } });
+    const poll = await as(dubs)({ poll: { question: "Heck or no?", options: ["heck yes", "no"] } });
+    expect((poll.body as { messages: { text: string; poll: { options: string[] } }[] }).messages.at(-1)).toMatchObject({ poll: { options: ["h**k yes", "no"] } });
+    expect(asked).toContain("m2:heck yes");
+    // Turned to nothing is nothing to say.
+    const { as: blank } = setup({ beforeSay: () => "   " });
+    expect((await blank(dubs)({ text: "gone" })).status).toBe(400);
+  });
+
+  it("tells the app what people said, not what it posted itself", async () => {
+    const heard: string[] = [];
+    const { chat, as } = setup({ onSay: ({ me, message }) => heard.push(`${me.id}:${message.text}`) });
+    await as(dubs)({ text: "Hi all" });
+    await as(dubs)({ poll: { question: "Tonight?", options: ["Yes", "No"] } });
+    await chat.post(room.key, { id: "seat:2", name: "Robo" }, "Hello", { bot: true });
+    expect((await as(dubs)({ text: "" })).status).toBe(400);
+    expect(heard).toEqual(["m2:Hi all", "m2:Tonight?"]);
+  });
+
+  it("lets a member who can't speak read, and take down what they said before, but not say, ask or vote", async () => {
+    const { as } = setup();
+    const watcher: ChatMember = { ...grammi, canSpeak: false };
+    const poll = ((await as(dubs)({ poll: { question: "Tonight?", options: ["Yes", "No"] } })).body as { messages: { id: number }[] }).messages[0]!.id;
+    await as(grammi)({ text: "Said before" });
+    const before = ((await as(grammi)()).body as { messages: { id: number; text: string }[] }).messages.find((m) => m.text === "Said before")!.id;
+    for (const input of [{ text: "Hi" }, { poll: { question: "Q?", options: ["a", "b"] } }, { vote: { id: poll, option: 0 } }]) {
+      expect(await as(watcher)(input)).toMatchObject({ status: 403, body: { error: "You can't speak here." } });
+    }
+    expect((await as(watcher)()).status).toBe(200);
+    expect(texts((await as(watcher)({ remove: before })).body)).toEqual(["Tonight?"]);
   });
 });
 
