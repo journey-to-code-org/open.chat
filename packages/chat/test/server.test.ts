@@ -171,6 +171,59 @@ describe("notices", () => {
   });
 });
 
+describe("what each member hasn't seen", () => {
+  it("is what others said since their page last had the room open", async () => {
+    const { chat, as, sync } = setup();
+    await as(mikey)({ text: "Spades at eight?" });
+    await as(mikey)({ text: "Bring snacks" });
+    // Never opened: all of it. Their own words never count.
+    expect(await chat.unread(room.key, "m2")).toBe(2);
+    expect(await chat.unread(room.key, "m1")).toBe(0);
+    // Reading the room sees it all.
+    await as(dubs)();
+    expect(await chat.unread(room.key, "m2")).toBe(0);
+    await as(grammi)({ text: "I'm in" });
+    expect(await chat.unread(room.key, "m2")).toBe(1);
+    // Saying something sees what was there.
+    await as(dubs)({ text: "Me too" });
+    expect(await chat.unread(room.key, "m2")).toBe(0);
+    expect(await chat.unread(room.key, "m1")).toBe(2);
+    // A member's own words are never unread, even said after their marker (from another app's
+    // route, say, that didn't mark it).
+    await sync.write("chats-seen", room.key, { m2: 0 });
+    expect(await chat.unread(room.key, "m2")).toBe(3);
+    await as(dubs)();
+        // A message taken down is no longer unread.
+    const said = (await chat.read(room.key)).messages.find((m) => m.text === "Me too")!;
+    await chat.redact(room.key, said.id);
+    expect(await chat.unread(room.key, "m1")).toBe(1);
+  });
+
+  it("is seen by a presence heartbeat, as by reading", async () => {
+    const { chat, as, page } = setup();
+    await as(mikey)({ text: "Anyone?" });
+    await page("who=m3")("/_zb/chat/presence", { room: "chats/house:parts", peer: "grammi-tab", state: { here: { member: "m3" } } });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(await chat.unread(room.key, "m3")).toBe(0);
+    expect(await chat.unread(room.key, "m2")).toBe(1);
+  });
+
+  it("is kept where pages can't read it, and written only when it moves on", async () => {
+    const writes: string[] = [];
+    const sync = createSyncServer({ mount: "/_zb/chat", log: memoryLog({ keep: "latest" }), warn: false });
+    const counted = { write: (c: string, k: string, f: Record<string, unknown>) => (writes.push(c), sync.write(c, k, f)), documents: () => sync.documents() };
+    const chat = createChat(counted);
+    await chat.handle(room, mikey, "POST", { text: "Hi" });
+    writes.length = 0;
+    for (let i = 0; i < 5; i++) chat.looking(room.key, "m2");
+    await new Promise((r) => setTimeout(r, 10));
+    expect(writes).toEqual(["chats-seen"]);
+    // And no page is sent it, member or not.
+    const follow = chatAuthorize(chat, { member: () => dubs });
+    expect(await follow({ request: new Request("http://test"), collection: "chats-seen", key: room.key, kind: "read" })).toBe(false);
+  });
+});
+
 describe("following a room live, through Zubra Sync", () => {
   const scope = encodeURIComponent(JSON.stringify({ chats: true }));
 

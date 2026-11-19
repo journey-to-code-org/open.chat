@@ -40,6 +40,11 @@ export interface ChatOptions {
   /** The collection the rooms' documents are kept in. Pages must use the same one. Default `chats`. */
   collection?: string;
   /**
+   * Where each room's read markers are kept (the last message each member has seen, for
+   * `unread`): one document per room, which pages are never sent. Default `<collection>-seen`.
+   */
+  seenCollection?: string;
+  /**
    * Tell members who aren't looking that something was said. Called at most once every
    * `notifyEvery` for each member, and never for one whose page is open on the room.
    */
@@ -72,6 +77,7 @@ const line = (value: unknown) => (typeof value === "string" ? value.replace(/\s+
 
 export function createChat(sync: ChatSync, options: ChatOptions = {}) {
   const collection = options.collection ?? "chats";
+  const seenCollection = options.seenCollection ?? `${collection}-seen`;
   const { notify, mask, burst = 5, burstMs = 10_000, notifyEvery = 5 * 60_000 } = options;
   const clock = options.now ?? Date.now;
 
@@ -90,6 +96,22 @@ export function createChat(sync: ChatSync, options: ChatOptions = {}) {
   // Kept in memory: losing them at a restart costs one extra notice at most.
   const said = new Map<string, number[]>();
   const looked = new Map<string, number>();
+
+  // What each member has seen: the last message there was when their page last had the room open.
+  const seenIn = async (key: string): Promise<Record<string, number>> => ((await sync.documents()).get(seenCollection, key) as Record<string, number> | undefined) ?? {};
+  // One at a time for each room, so two at once (two tabs' heartbeats) don't both write.
+  const seeing = new Map<string, Promise<void>>();
+  function see(key: string, member: string): Promise<void> {
+    const next = (seeing.get(key) ?? Promise.resolve()).then(async () => {
+      const last = (await read(key)).messages.at(-1)?.id ?? 0;
+      // Written only when it moves on: a heartbeat every ten seconds mustn't fill the log.
+      if (((await seenIn(key))[member] ?? 0) < last) await sync.write(seenCollection, key, { [member]: last });
+    });
+    const settled = next.catch(() => undefined);
+    seeing.set(key, settled);
+    void settled.then(() => seeing.get(key) === settled && seeing.delete(key));
+    return next;
+  }
   const notified = new Map<string, number>();
   const at = (room: string, member: string) => `${room}\u0000${member}`;
 
@@ -134,9 +156,22 @@ export function createChat(sync: ChatSync, options: ChatOptions = {}) {
       if (chat.messages.length || chat.filter) await keep(key, { messages: [], rev: chat.rev + 1, next: chat.next, filter: false });
     },
 
-    /** A member has the room open (a presence heartbeat): no notice for them for a while. */
+    /**
+     * A member has the room open (a presence heartbeat): no notice for them for a while, and
+     * everything said so far is seen.
+     */
     looking(key: string, member: string, now = clock()) {
       looked.set(at(key, member), now);
+      void see(key, member).catch(() => undefined);
+    },
+
+    /**
+     * How many messages a member hasn't seen: what others said since their page last had the room
+     * open. A member who has never opened it hasn't seen any.
+     */
+    async unread(key: string, member: string): Promise<number> {
+      const seen = (await seenIn(key))[member] ?? 0;
+      return (await read(key)).messages.filter((m) => m.id > seen && m.by !== member).length;
     },
 
     /** Take a message down, for the app's own moderators. Resolves to it, or null when there's no such message. */
@@ -161,6 +196,15 @@ export function createChat(sync: ChatSync, options: ChatOptions = {}) {
      *   POST { filter: boolean }             → the same, with crude words covered from now on, or not (managers)
      */
     async handle(room: ChatRoom, me: ChatMember, method: string, input: Record<string, unknown> = {}, query: URLSearchParams = new URLSearchParams(), now = clock()): Promise<ChatReply> {
+      const reply = await answer(room, me, method, input, query, now);
+      // Whoever reads the room, or says something in it, has seen what's there.
+      if (reply.status < 400) await see(room.key, me.id);
+      return reply;
+    },
+  };
+
+  async function answer(room: ChatRoom, me: ChatMember, method: string, input: Record<string, unknown>, query: URLSearchParams, now: number): Promise<ChatReply> {
+    {
       const who = at(room.key, me.id);
       const chat = await read(room.key);
       const saved = async (status = 200) => {
@@ -234,8 +278,8 @@ export function createChat(sync: ChatSync, options: ChatOptions = {}) {
       const reply = await saved(201);
       tell(room, me, message, now);
       return reply;
-    },
-  };
+    }
+  }
 }
 
 export type Chat = ReturnType<typeof createChat>;
