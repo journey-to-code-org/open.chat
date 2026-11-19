@@ -126,6 +126,30 @@ describe("a room's chat", () => {
     expect(texts((await as(mikey)()).body).at(-1)).toBe("darn");
   });
 
+  it("keeps everything said at once, each under its own id", async () => {
+    // The app takes its time over each message (it asks its database, say), and posts its own words meanwhile.
+    const { chat, as } = setup({ beforeSay: async ({ text }) => (await new Promise((done) => setTimeout(done, 5)), text) });
+    await Promise.all([
+      as(mikey)({ text: "one" }),
+      as(dubs)({ text: "two" }),
+      chat.post(room.key, { id: "bot", name: "Dot" }, "three", { bot: true }),
+      as(grammi)({ text: "four" }),
+      chat.post(room.key, null, "five", { notice: true }),
+    ]);
+    const { messages, next, rev } = await chat.read(room.key);
+    expect(messages.map((m) => m.text).sort()).toEqual(["five", "four", "one", "three", "two"]);
+    expect(new Set(messages.map((m) => m.id)).size).toBe(5);
+    expect([next, rev]).toEqual([6, 5]);
+    // Taking down and votes wait their turn too.
+    const asked = (await as(mikey)({ poll: { question: "Spades?", options: ["Yes", "No"] } })).body as { messages: { id: number; poll?: unknown }[] };
+    const poll = asked.messages.find((m) => m.poll)!.id;
+    await Promise.all([as(dubs)({ vote: { id: poll, option: 0 } }), as(grammi)({ vote: { id: poll, option: 1 } }), chat.redact(room.key, messages[0]!.id), as(mikey)({ text: "six" })]);
+    const after = await chat.read(room.key);
+    expect(after.messages.find((m) => m.id === poll)!.poll!.votes).toEqual({ m2: 0, m3: 1 });
+    expect(after.messages.map((m) => m.text)).toContain("six");
+    expect(after.messages.some((m) => m.id === messages[0]!.id)).toBe(false);
+  });
+
   it("starts over when cleared, without giving an id out again", async () => {
     const { chat, as } = setup();
     await as(mikey)({ text: "The old room" });

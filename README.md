@@ -18,6 +18,7 @@ It started as the house chat in [open.parlor](https://github.com/journey-to-code
 - **Word filter**, for apps that pass a `mask`: managers switch it on, and it covers what's said from then on.
 - **Notices**: the app is told who to notify, at most once every five minutes per member, and never someone whose page is open on the room.
 - Five messages in ten seconds at most, per member.
+- Changes to a room are made one at a time, so what's said at the same moment is all kept, each under its own id.
 - **The app's own words**: `chat.post(key, speaker, text, { bot, notice })` puts a message in a room without the checks: a computer player's reply (`bot`, shown with 🤖), or a line about the room itself (`notice`, shown on its own, never counted as unread, never notified).
 - **The app's say**: `beforeSay({ room, me, text })` sees every message, poll question and answer before it's kept, and returns the words to keep, or `{ error }` to refuse (a closed table, a muted player). `onSay({ room, me, message })` hears each one after, to answer it.
 - **Reading along**: a member with `canSpeak: false` follows the room but can't say, ask or vote; their own messages can still be taken down.

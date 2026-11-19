@@ -63,6 +63,7 @@ export interface ChatOptions {
    * Before a person's words are added (a message, or a poll's question and each of its answers):
    * return the words to post, changed perhaps, or `{ error }` to turn them away with a reason. For
    * what the app knows and the chat doesn't: a muted player, a closed table, words covered always.
+   * Changes to the room wait for it, so it mustn't wait for one itself (a `post` to the same room).
    */
   beforeSay?: (event: { room: ChatRoom; me: ChatMember; text: string }) => string | { error: string } | Promise<string | { error: string }>;
   /** After a person says something or asks (not after `post`): a bot's answer, a log. */
@@ -100,6 +101,17 @@ export function createChat(sync: ChatSync, options: ChatOptions = {}) {
     };
   };
   const keep = (key: string, chat: ChatDocument) => sync.write(collection, key, { ...chat });
+
+  // Each change to a room reads it, may wait (the app's `beforeSay`), and writes it whole: one at a
+  // time for each room, so two at once don't both start from the same document and lose one.
+  const turns = new Map<string, Promise<unknown>>();
+  function inTurn<T>(key: string, change: () => Promise<T>): Promise<T> {
+    const next = (turns.get(key) ?? Promise.resolve()).then(change);
+    const settled = next.catch(() => undefined);
+    turns.set(key, settled);
+    void settled.then(() => turns.get(key) === settled && turns.delete(key));
+    return next;
+  }
 
   // Kept in memory: losing them at a restart costs one extra notice at most.
   const said = new Map<string, number[]>();
@@ -159,10 +171,11 @@ export function createChat(sync: ChatSync, options: ChatOptions = {}) {
     read,
 
     /** Start a room over: a new room under an old one's key doesn't inherit its conversation. */
-    async clear(key: string) {
-      const chat = await read(key);
-      if (chat.messages.length || chat.filter) await keep(key, { messages: [], rev: chat.rev + 1, next: chat.next, filter: false });
-    },
+    clear: (key: string) =>
+      inTurn(key, async () => {
+        const chat = await read(key);
+        if (chat.messages.length || chat.filter) await keep(key, { messages: [], rev: chat.rev + 1, next: chat.next, filter: false });
+      }),
 
     /**
      * A member has the room open (a presence heartbeat): no notice for them for a while, and
@@ -187,28 +200,30 @@ export function createChat(sync: ChatSync, options: ChatOptions = {}) {
      * (`{ bot: true }`, as `speaker`), or a notice to the room (`{ notice: true }`, no speaker).
      * Nobody is notified. Resolves to the message, or to why there's none (nothing to say).
      */
-    async post(key: string, speaker: { id: string; name: string } | null, text: string, { bot = false, notice = false }: { bot?: boolean; notice?: boolean } = {}, now = clock()): Promise<ChatMessage | string> {
-      const words = line(text).slice(0, LIMITS.message);
-      if (!words) return "Nothing to say.";
-      const chat = await read(key);
-      const message: ChatMessage = { id: chat.next, by: notice ? "" : (speaker?.id ?? ""), name: notice ? "" : (speaker?.name ?? ""), at: now, text: words, ...(bot && !notice ? { bot: true as const } : {}), ...(notice ? { notice: true as const } : {}) };
-      chat.messages = [...chat.messages, message].slice(-LIMITS.kept);
-      chat.next += 1;
-      chat.rev += 1;
-      await keep(key, chat);
-      return message;
-    },
+    post: (key: string, speaker: { id: string; name: string } | null, text: string, { bot = false, notice = false }: { bot?: boolean; notice?: boolean } = {}, now = clock()): Promise<ChatMessage | string> =>
+      inTurn(key, async () => {
+        const words = line(text).slice(0, LIMITS.message);
+        if (!words) return "Nothing to say.";
+        const chat = await read(key);
+        const message: ChatMessage = { id: chat.next, by: notice ? "" : (speaker?.id ?? ""), name: notice ? "" : (speaker?.name ?? ""), at: now, text: words, ...(bot && !notice ? { bot: true as const } : {}), ...(notice ? { notice: true as const } : {}) };
+        chat.messages = [...chat.messages, message].slice(-LIMITS.kept);
+        chat.next += 1;
+        chat.rev += 1;
+        await keep(key, chat);
+        return message;
+      }),
 
     /** Take a message down, for the app's own moderators. Resolves to it, or null when there's no such message. */
-    async redact(key: string, id: number): Promise<ChatMessage | null> {
-      const chat = await read(key);
-      const message = chat.messages.find((m) => m.id === id);
-      if (!message) return null;
-      chat.messages = chat.messages.filter((m) => m !== message);
-      chat.rev += 1;
-      await keep(key, chat);
-      return message;
-    },
+    redact: (key: string, id: number): Promise<ChatMessage | null> =>
+      inTurn(key, async () => {
+        const chat = await read(key);
+        const message = chat.messages.find((m) => m.id === id);
+        if (!message) return null;
+        chat.messages = chat.messages.filter((m) => m !== message);
+        chat.rev += 1;
+        await keep(key, chat);
+        return message;
+      }),
 
     /**
      * A room's route, for a member of it. The app finds the room and the member; anyone else
@@ -221,7 +236,7 @@ export function createChat(sync: ChatSync, options: ChatOptions = {}) {
      *   POST { filter: boolean }             → the same, with crude words covered from now on, or not (managers)
      */
     async handle(room: ChatRoom, me: ChatMember, method: string, input: Record<string, unknown> = {}, query: URLSearchParams = new URLSearchParams(), now = clock()): Promise<ChatReply> {
-      const reply = await answer(room, me, method, input, query, now);
+      const reply = await inTurn(room.key, () => answer(room, me, method, input, query, now));
       // Whoever reads the room, or says something in it, has seen what's there.
       if (reply.status < 400) await see(room.key, me.id);
       return reply;
