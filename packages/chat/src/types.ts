@@ -18,6 +18,10 @@ export interface ChatMessage {
   /** When, in milliseconds since 1970. */
   at: number;
   poll?: ChatPoll;
+  /** Said by the app's computer player (`chat.post` with `bot`), not a person. */
+  bot?: true;
+  /** The app's own line to the room ("Grammi joined"), not anyone's words: `by` and `name` are empty. */
+  notice?: true;
 }
 
 /** A chat as it is kept: one document for each room, in the `chats` collection by default. */
@@ -37,6 +41,11 @@ export interface ChatMember {
   name: string;
   /** A manager may take down what anyone said, and switch the word filter. */
   manager?: boolean;
+  /**
+   * Whether they may say anything (and ask or vote). Default true. A member who can't still reads
+   * the room, and may take down what they said before.
+   */
+  canSpeak?: boolean;
 }
 
 /** A room: where one conversation happens, and who is in it. */

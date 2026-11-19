@@ -18,7 +18,10 @@
   @prop {boolean} online - Whether the page has a connection; without one, nothing can be sent.
   @prop {boolean} canFilter - Whether the server can cover crude words (it was given a `mask`).
   @prop {string} noun - What to call the room in the labels ("Say something to the house").
-  @prop {{ say(text: string): Promise<string | null>, unsay(id: number): Promise<string | null>, ask(question: string, options: string[]): Promise<string | null>, vote(id: number, option: number | null): Promise<string | null>, setFilter(on: boolean): Promise<string | null> } | null} actions - What sends the person's changes; each resolves to what went wrong, or null.
+  @prop {boolean} canSpeak - Whether `me` may say anything; without, the room is read along (a spectator, a muted player).
+  @prop {boolean} showHere - Whether to show who's in the room (its `members`, those here first). Off for a room open to anyone, whose members aren't a list.
+  @prop {boolean} askName - Ask for a name before the first message (a guest, where the app opens a room to anyone): it is sent with each message as `actions.say(text, name)`, and kept on the device.
+  @prop {{ say(text: string, name?: string): Promise<string | null>, unsay(id: number): Promise<string | null>, ask(question: string, options: string[]): Promise<string | null>, vote(id: number, option: number | null): Promise<string | null>, setFilter(on: boolean): Promise<string | null> } | null} actions - What sends the person's changes; each resolves to what went wrong, or null.
   @fires {{ id: number, by: string, name: string, text: string }} heard - Someone else said something (once the room has loaded): for a sound, or a badge.
 -->
 <script>
@@ -95,9 +98,18 @@
   }
 
   let draft = ''
+  // A guest's name, kept on the device for the next room.
+  const NAME_KEY = 'chat-room:name'
+  let yourName = (() => { try { return localStorage.getItem(NAME_KEY) ?? '' } catch { return '' } })()
+  const named = !askName || yourName.trim() !== ''
   async function send() {
     const text = draft.trim()
-    if (text && (await attempt(() => actions.say(text)))) draft = ''
+    if (!text || !named) return
+    const as = askName ? yourName.trim().slice(0, 30) : undefined
+    if (await attempt(() => (as === undefined ? actions.say(text) : actions.say(text, as)))) {
+      draft = ''
+      if (as !== undefined) try { localStorage.setItem(NAME_KEY, as) } catch {}
+    }
   }
 
   // ---- Polls --------------------------------------------------------------------------------------------
@@ -180,10 +192,13 @@
   .chat-who { font-size: 0.72rem; font-weight: 700; color: var(--chat-name, var(--primary, #18181b)); }
   .chat-who time { font-weight: 400; color: var(--muted-foreground, #71717a); margin-left: 6px; }
   .chat-text { overflow-wrap: anywhere; white-space: pre-wrap; }
+  .chat-notice { align-self: center; max-width: 90%; margin: 2px 0; font-size: 0.8rem; font-style: italic; text-align: center; color: var(--muted-foreground, #71717a); }
+  .chat-quiet { margin: 0; font-size: 0.85rem; color: var(--muted-foreground, #71717a); }
   .chat-msg[data-poll] .chat-text { font-weight: 700; }
   .chat-vote, .chat-bars { display: block; }
   .chat-small { align-self: flex-end; }
-  .chat-compose { display: flex; align-items: flex-end; gap: 8px; }
+  .chat-compose { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; }
+  .chat-compose .chat-name { flex: 1 1 100%; }
   .chat-compose text-field { flex: 1; min-width: 0; }
   .chat-compose action-button { flex: none; }
   .chat-tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
@@ -197,10 +212,10 @@
   .chat-msg[data-leaving] { opacity: 0; scale: 0.96; }
   @media (prefers-reduced-motion: reduce) { .chat-msg, .chat-face { transition: none; } }
 </style>
-<chat-room doc="" me="" members={[]} manager={false} online={true} can-filter={false} noun="room" actions={null}>
+<chat-room doc="" me="" members={[]} manager={false} online={true} can-filter={false} can-speak={true} show-here={true} ask-name={false} noun="room" actions={null}>
   <chat-feed doc={doc} member={me} onchatchange={onChat} onherechange={onHere}>
     <div class="chat-body">
-      <cluster-layout class="chat-here" gap="0.35rem" role="group" aria-label="Who's here">
+      <cluster-layout zb-if={showHere} class="chat-here" gap="0.35rem" role="group" aria-label="Who's here">
         <zb-each items={faces} as="m" key={m.id} animate>
           <span class="chat-face" data-away={m.here ? null : ""} title={faceTitle(m)}>
             <user-avatar name={m.name} size="sm" status={m.here ? 'online' : 'offline'}></user-avatar>
@@ -213,10 +228,11 @@
         <empty-state zb-if={messages.length === 0} heading={online ? 'Nothing said yet' : 'Nothing kept on this device'}>{!online ? "The chat will be here when you're back online." : members.length > 1 ? `Say hi to the ${noun}.` : 'Nobody else is here yet. Leave a note for when they are.'}</empty-state>
         <stack-layout zb-else gap="0.45rem">
           <zb-each items={messages} as="m" key={m.id} animate>
-            <article class="chat-msg" data-mine={m.by === me ? "" : null} data-poll={m.poll ? "" : null}>
+            <p zb-if={m.notice} class="chat-notice">{m.text}</p>
+            <article zb-else class="chat-msg" data-mine={m.by === me ? "" : null} data-poll={m.poll ? "" : null}>
               <user-avatar zb-if={m.by !== me} name={m.name} size="sm" status={here.has(m.by) ? 'online' : ''}></user-avatar>
               <div class="chat-bubble">
-                <span class="chat-who">{m.name}{m.poll ? ' asks' : ''} <time datetime={iso(m.at)}>{when(m.at)}</time></span>
+                <span class="chat-who">{m.name}{m.bot ? ' 🤖' : ''}{m.poll ? ' asks' : ''} <time datetime={iso(m.at)}>{when(m.at)}</time></span>
                 <span class="chat-text">{m.text}</span>
                 <zb-if test={!!m.poll}>
                   <choice-cards class="chat-vote" label="Your answer to: {m.text}" items={choicesOf(m)} value={chosen(m)} onvaluechange={(event) => vote(m, event.detail)}></choice-cards>
@@ -230,12 +246,14 @@
         </stack-layout>
       </div>
 
-      <form class="chat-compose" onsubmit.prevent={send}>
+      <p zb-if={!canSpeak} class="chat-quiet">You can read along, but not talk here.</p>
+      <form zb-if={canSpeak} class="chat-compose" onsubmit.prevent={send}>
+        <text-field zb-if={askName} class="chat-name" value:bind={yourName} label="Your name" name="name" autocomplete="nickname" maxlength={30}></text-field>
         <text-field value:bind={draft} label="Say something to the {noun}" name="message" autocomplete="off" maxlength={LIMIT} disabled={!online}></text-field>
-        <action-button type="submit" loading={busy} disabled={!draft.trim() || !online}>Send</action-button>
+        <action-button type="submit" loading={busy} disabled={!draft.trim() || !named || !online}>Send</action-button>
       </form>
       <div class="chat-tools">
-        <action-button variant="outline" size="sm" disabled={!online} onclick={openAsk}>Ask the {noun}…</action-button>
+        <action-button zb-if={canSpeak} variant="outline" size="sm" disabled={!online} onclick={openAsk}>Ask the {noun}…</action-button>
         <toggle-switch zb-if={manager && canFilter} class="chat-filter" label="Cover crude words" checked={filter} disabled={!online || busy} oncheckedchange={(event) => attempt(() => actions.setFilter(event.detail))}></toggle-switch>
         <status-badge zb-else-if={filter} variant="outline">Crude words are covered</status-badge>
       </div>

@@ -18,6 +18,9 @@ It started as the house chat in [open.parlor](https://github.com/journey-to-code
 - **Word filter**, for apps that pass a `mask`: managers switch it on, and it covers what's said from then on.
 - **Notices**: the app is told who to notify, at most once every five minutes per member, and never someone whose page is open on the room.
 - Five messages in ten seconds at most, per member.
+- **The app's own words**: `chat.post(key, speaker, text, { bot, notice })` puts a message in a room without the checks: a computer player's reply (`bot`, shown with 🤖), or a line about the room itself (`notice`, shown on its own, never counted as unread, never notified).
+- **The app's say**: `beforeSay({ room, me, text })` sees every message, poll question and answer before it's kept, and returns the words to keep, or `{ error }` to refuse (a closed table, a muted player). `onSay({ room, me, message })` hears each one after, to answer it.
+- **Reading along**: a member with `canSpeak: false` follows the room but can't say, ask or vote; their own messages can still be taken down.
 - **Unread**: `chat.unread(key, member)` counts what others said since that member last had the room open. Reading the room, saying something, or a presence heartbeat counts as having seen it. The markers are kept per room in a server-only collection, `chats-seen`, which pages are never sent.
 
 ## Using it
@@ -40,6 +43,8 @@ const follow = chatAuthorize(chat, { member: (request, key) => memberOf(request,
 const room = { key: `house:${slug}`, title: house.name, members: house.members.map((m) => ({ id: m.id, name: m.name, manager: m.role !== "member" })) };
 const { status, body } = await chat.handle(room, me, request.method, input);
 ```
+
+A room open to anyone (comments under a post, say) is the same: the app's route makes `me` from the visitor, with the name they give (`input.name`, sent by `actions.say(text, name)`), and `<chat-room ask-name show-here="false">` asks for it.
 
 Serve `sync.fetch(request)` (or `sync.handle(req, res)` in Node) for `/_zb/chat`. The chat's collection, `chats`, can share a log with other Sync servers. Each server sends out only its own changes.
 
@@ -66,6 +71,8 @@ const actions = openChat({ room: "house:parts", endpoint: "/houses/parts/chat" }
 From React, `import { ChatRoom } from "@journey-to-code/chat-ui/react"`; from Vue, `@journey-to-code/chat-ui/vue`. Svelte, Solid and Angular use the element itself. In an app that compiles Zubra components itself, import `@journey-to-code/chat-ui/components/chat-room.zb` instead. Where the app has its own copy of one of the parts (`action-button`, `text-field` and the rest), the app's copy stands in for the package's.
 
 The components follow [zubra-ui](https://github.com/journey-to-code-org/zubra-ui)'s theme variables (shadcn/ui's). `@journey-to-code/chat-ui/theme.css` is its default theme. `--chat-bubble`, `--chat-bubble-mine`, `--chat-name` and `--chat-height` set the chat's own look.
+
+`<chat-room>` also takes `can-speak` (false: read along, no box), `ask-name` (a "Your name" field, kept on the device and sent with each message) and `show-here` (false: no row of who's here).
 
 ## Working on it
 

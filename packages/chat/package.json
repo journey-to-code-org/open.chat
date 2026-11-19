@@ -1,6 +1,6 @@
 {
   "name": "@journey-to-code/chat",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "A chat for any app: rooms kept live through Zubra Sync, changed only by the server, with polls, taking messages down, an optional word filter and notices for members who aren't looking.",
   "type": "module",
   "main": "dist/index.js",

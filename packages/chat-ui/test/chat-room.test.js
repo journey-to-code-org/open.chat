@@ -233,6 +233,70 @@ describe.each(found)('%s', (framework) => {
     r.view.unmount();
   });
 
+  test('the room’s notices are lines of their own, and a computer player says so', async () => {
+    const r = await room(framework);
+    await r.chat([
+      { id: 1, by: '', name: '', text: 'Grammi joined', at: Date.now(), notice: true },
+      said(2, 'm2', 'Hello', { bot: true }),
+      said(3, 'm3', 'Hi love'),
+    ]);
+    expect([...r.el.querySelectorAll('.chat-notice')].map((n) => n.textContent)).toEqual(['Grammi joined']);
+    expect(r.texts()).toEqual(['Hello', 'Hi love']);
+    expect(r.el.querySelectorAll('.chat-who')[0].textContent).toContain('Dubs 🤖');
+    expect(r.el.querySelectorAll('.chat-who')[1].textContent).not.toContain('🤖');
+    // A notice has no Take down, even for a manager.
+    const manager = await room(framework, { manager: true });
+    await manager.chat([{ id: 1, by: '', name: '', text: 'Table closed', at: Date.now(), notice: true }]);
+    expect(manager.el.querySelector('.chat-notice').parentElement.querySelector('button')).toBeNull();
+    manager.view.unmount();
+    r.view.unmount();
+  });
+
+  test('someone who can’t speak reads along: no box, no asking, but their own words can still go', async () => {
+    const r = await room(framework, { canSpeak: false });
+    await r.chat([said(1, 'm1', 'Said before'), said(2, 'm2', 'Hello')]);
+    expect(r.el.querySelector('form.chat-compose')).toBeNull();
+    expect(r.button('Ask the house…')).toBeUndefined();
+    expect(r.el.querySelector('.chat-quiet').textContent).toContain('read along');
+    expect(r.button('Take down', r.el.querySelectorAll('.chat-msg')[0])).toBeDefined();
+    r.view.unmount();
+  });
+
+  test('a guest gives a name before the first message, and it goes with each one and is kept', async () => {
+    localStorage.removeItem('chat-room:name');
+    const r = await room(framework, { askName: true });
+    const [nameField, messageField] = r.el.querySelectorAll('.chat-compose text-field');
+    await r.type(messageField, 'Lovely post');
+    expect(r.button('Send').disabled).toBe(true);
+    await r.type(nameField, '  Aunt Sue  ');
+    expect(r.button('Send').disabled).toBe(false);
+    r.el.querySelector('form.chat-compose').requestSubmit();
+    await r.flush();
+    expect(r.calls).toEqual([['say', 'Lovely post', 'Aunt Sue']]);
+    expect(localStorage.getItem('chat-room:name')).toBe('Aunt Sue');
+    r.view.unmount();
+    // The next room knows the name already.
+    const again = await room(framework, { askName: true });
+    expect(again.el.querySelector('.chat-compose text-field input').value).toBe('Aunt Sue');
+    again.view.unmount();
+    // Without askName, no name goes.
+    const member = await room(framework);
+    expect(member.el.querySelectorAll('.chat-compose text-field')).toHaveLength(1);
+    await member.type(member.el.querySelector('.chat-compose text-field'), 'Hi');
+    member.el.querySelector('form.chat-compose').requestSubmit();
+    await member.flush();
+    expect(member.calls).toEqual([['say', 'Hi']]);
+    member.view.unmount();
+  });
+
+  test('who’s here can be left out, for a room open to anyone', async () => {
+    const r = await room(framework, { showHere: false, members: [] });
+    expect(r.el.querySelector('.chat-here')).toBeNull();
+    await r.chat([said(1, 'm2', 'First!')]);
+    expect(r.texts()).toEqual(['First!']);
+    r.view.unmount();
+  });
+
   test('offline: nothing can be sent', async () => {
     const r = await room(framework, { online: false });
     expect(r.el.querySelector('.chat-compose input').disabled).toBe(true);

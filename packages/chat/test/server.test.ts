@@ -144,6 +144,68 @@ describe("a room's chat", () => {
   });
 });
 
+describe("the app's own words, and its say over people's", () => {
+  it("posts a computer player's words and the room's notices past every check, and notifies nobody", async () => {
+    const { chat, as, notices } = setup();
+    const said = await chat.post(room.key, { id: "seat:2", name: "Robo" }, "  Nice\n play  ", { bot: true });
+    expect(said).toMatchObject({ by: "seat:2", name: "Robo", text: "Nice play", bot: true });
+    expect(await chat.post(room.key, null, "Grammi joined", { notice: true })).toMatchObject({ by: "", name: "", text: "Grammi joined", notice: true });
+    expect(await chat.post(room.key, { id: "x", name: "X" }, "   ")).toBe("Nothing to say.");
+    // As fast as the app likes: no five-in-ten-seconds for it.
+    for (let i = 0; i < 8; i++) expect(typeof (await chat.post(room.key, { id: "seat:2", name: "Robo" }, `line ${i}`, { bot: true }))).not.toBe("string");
+    expect(notices).toEqual([]);
+    // Members see them; a notice is nobody's unread, a bot's line is.
+    const seen = (await as(dubs)()).body as { messages: { bot?: boolean; notice?: boolean }[] };
+    expect(seen.messages.filter((m) => m.notice)).toHaveLength(1);
+    await chat.post(room.key, null, "Dubs left", { notice: true });
+    await chat.post(room.key, { id: "seat:2", name: "Robo" }, "Bye", { bot: true });
+    expect(await chat.unread(room.key, "m2")).toBe(1);
+  });
+
+  it("lets the app change people's words or turn them away, for messages and every piece of a poll", async () => {
+    const asked: string[] = [];
+    const { as } = setup({
+      beforeSay: ({ me, text }) => {
+        asked.push(`${me.id}:${text}`);
+        if (me.id === "m3") return { error: "You've been muted at this table." };
+        return text.replace(/heck/g, "h**k");
+      },
+    });
+    expect(((await as(dubs)({ text: "what the heck" })).body as { messages: { text: string }[] }).messages.at(-1)!.text).toBe("what the h**k");
+    const muted = await as(grammi)({ text: "Hello?" });
+    expect(muted).toMatchObject({ status: 403, body: { error: "You've been muted at this table." } });
+    const poll = await as(dubs)({ poll: { question: "Heck or no?", options: ["heck yes", "no"] } });
+    expect((poll.body as { messages: { text: string; poll: { options: string[] } }[] }).messages.at(-1)).toMatchObject({ poll: { options: ["h**k yes", "no"] } });
+    expect(asked).toContain("m2:heck yes");
+    // Turned to nothing is nothing to say.
+    const { as: blank } = setup({ beforeSay: () => "   " });
+    expect((await blank(dubs)({ text: "gone" })).status).toBe(400);
+  });
+
+  it("tells the app what people said, not what it posted itself", async () => {
+    const heard: string[] = [];
+    const { chat, as } = setup({ onSay: ({ me, message }) => heard.push(`${me.id}:${message.text}`) });
+    await as(dubs)({ text: "Hi all" });
+    await as(dubs)({ poll: { question: "Tonight?", options: ["Yes", "No"] } });
+    await chat.post(room.key, { id: "seat:2", name: "Robo" }, "Hello", { bot: true });
+    expect((await as(dubs)({ text: "" })).status).toBe(400);
+    expect(heard).toEqual(["m2:Hi all", "m2:Tonight?"]);
+  });
+
+  it("lets a member who can't speak read, and take down what they said before, but not say, ask or vote", async () => {
+    const { as } = setup();
+    const watcher: ChatMember = { ...grammi, canSpeak: false };
+    const poll = ((await as(dubs)({ poll: { question: "Tonight?", options: ["Yes", "No"] } })).body as { messages: { id: number }[] }).messages[0]!.id;
+    await as(grammi)({ text: "Said before" });
+    const before = ((await as(grammi)()).body as { messages: { id: number; text: string }[] }).messages.find((m) => m.text === "Said before")!.id;
+    for (const input of [{ text: "Hi" }, { poll: { question: "Q?", options: ["a", "b"] } }, { vote: { id: poll, option: 0 } }]) {
+      expect(await as(watcher)(input)).toMatchObject({ status: 403, body: { error: "You can't speak here." } });
+    }
+    expect((await as(watcher)()).status).toBe(200);
+    expect(texts((await as(watcher)({ remove: before })).body)).toEqual(["Tonight?"]);
+  });
+});
+
 describe("notices", () => {
   it("go to the members who aren't looking, once for a conversation", async () => {
     const { as, notices, tick } = setup();

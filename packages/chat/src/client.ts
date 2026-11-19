@@ -14,7 +14,8 @@ import { connect } from "@zubra/sync/connect";
 
 /** What `<chat-room>` calls. Each resolves to what went wrong, or null when it's done. */
 export interface ChatActions {
-  say(text: string): Promise<string | null>;
+  /** `name`, for a guest who gives one (a room the app opens to anyone): sent beside the words for the app's route to use. */
+  say(text: string, name?: string): Promise<string | null>;
   unsay(id: number): Promise<string | null>;
   ask(question: string, options: string[]): Promise<string | null>;
   vote(id: number, option: number | null): Promise<string | null>;
@@ -88,7 +89,7 @@ export function openChat(options: OpenChatOptions): ChatActions {
     }
   };
   return {
-    say: (text) => attempt({ text }),
+    say: (text, name) => attempt(name === undefined ? { text } : { text, name }),
     unsay: (id) => attempt({ remove: id }),
     ask: (question, answers) => attempt({ poll: { question, options: answers } }),
     vote: (id, option) => attempt({ vote: { id, option } }),
