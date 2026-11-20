@@ -1,6 +1,6 @@
 # open.chat
 
-A chat for any app. Rooms are kept on a [Zubra Sync](https://github.com/journey-to-code-org/zubra) server and followed live by their members' pages, but only the server changes them, so every message is checked first. Each room has polls, a way to take messages down, an optional word filter, and notices for members who aren't looking. On the page, the chat is one element, `<chat-room>`, made of Zubra components. It works the same in plain HTML, React, Vue, Svelte, Solid and Angular.
+A chat for any app. Rooms are kept on a [Zubra Sync](https://github.com/zubra-js/zubra) server and followed live by their members' pages, but only the server changes them, so every message is checked first. Each room has polls, a way to take messages down, an optional word filter, and notices for members who aren't looking. On the page, the chat is one element, `<chat-room>`, made of Zubra components. It works the same in plain HTML, React, Vue, Svelte, Solid and Angular.
 
 It started as the house chat in [open.parlor](https://github.com/journey-to-code-org/open.parlor), and the parlor uses it from here.
 
@@ -71,7 +71,7 @@ const actions = openChat({ room: "house:parts", endpoint: "/houses/parts/chat" }
 
 From React, `import { ChatRoom } from "@journey-to-code/chat-ui/react"`; from Vue, `@journey-to-code/chat-ui/vue`. Svelte, Solid and Angular use the element itself. In an app that compiles Zubra components itself, import `@journey-to-code/chat-ui/components/chat-room.zb` instead. Where the app has its own copy of one of the parts (`action-button`, `text-field` and the rest), the app's copy stands in for the package's.
 
-The components follow [zubra-ui](https://github.com/journey-to-code-org/zubra-ui)'s theme variables (shadcn/ui's). `@journey-to-code/chat-ui/theme.css` is its default theme. `--chat-bubble`, `--chat-bubble-mine`, `--chat-name` and `--chat-height` set the chat's own look.
+The components follow [zubra-ui](https://github.com/zubra-js/zubra-ui)'s theme variables (shadcn/ui's). `@journey-to-code/chat-ui/theme.css` is its default theme. `--chat-bubble`, `--chat-bubble-mine`, `--chat-name` and `--chat-height` set the chat's own look.
 
 `<chat-room>` also takes `can-speak` (false: read along, no box), `ask-name` (a "Your name" field, kept on the device and sent with each message) and `show-here` (false: no row of who's here).
 
