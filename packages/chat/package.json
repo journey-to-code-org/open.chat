@@ -1,6 +1,6 @@
 {
   "name": "@journey-to-code/chat",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "A chat for any app: rooms kept live through Zubra Sync, changed only by the server, with polls, taking messages down, an optional word filter and notices for members who aren't looking.",
   "type": "module",
   "main": "dist/index.js",
@@ -30,10 +30,10 @@
     "test": "vitest run"
   },
   "peerDependencies": {
-    "@zubra/sync": "^5.22.0"
+    "@zubra/sync": "^6.0.2"
   },
   "devDependencies": {
-    "@zubra/sync": "^5.22.0",
+    "@zubra/sync": "^6.0.2",
     "typescript": "^5.6.0",
     "vitest": "^5.1.1"
   },
